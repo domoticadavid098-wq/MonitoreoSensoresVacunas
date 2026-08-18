@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏥 Monitoreo Area Vacunas</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 25px;
+            padding: 40px;
+            max-width: 550px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        .header { text-align: center; margin-bottom: 30px; }
+        .header h1 { color: #2d3748; font-size: 28px; }
+        .header .subtitle { color: #718096; font-size: 14px; }
+        .status-bar {
+            background: #f7fafc;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.online { background: #48bb78; }
+        .status-dot.offline { background: #fc8181; }
+        .status-dot.alerta { background: #ed8936; animation: pulse 0.5s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+        .sensor-grid { display: grid; gap: 15px; margin-bottom: 25px; }
+        .sensor-card {
+            background: #f7fafc;
+            border-radius: 15px;
+            padding: 20px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 4px solid #cbd5e0;
+        }
+        .sensor-card .label { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+        .sensor-card .icon { font-size: 24px; }
+        .sensor-card .value { font-size: 28px; font-weight: 700; }
+        .sensor-card.temperatura { border-left-color: #fc8181; }
+        .sensor-card.temperatura .value { color: #e53e3e; }
+        .sensor-card.humedad { border-left-color: #4299e1; }
+        .sensor-card.humedad .value { color: #2b6cb0; }
+        .sensor-card.presion { border-left-color: #9f7aea; }
+        .sensor-card.presion .value { color: #6b46c1; }
+        .sensor-card .unit { font-size: 16px; font-weight: 400; color: #a0aec0; }
+        .alerta-box {
+            background: #fed7d7;
+            border: 2px solid #fc8181;
+            border-radius: 12px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .alerta-box.show { display: block; }
+        .alerta-box .text { color: #c53030; font-weight: 600; }
+        .footer { text-align: center; color: #a0aec0; font-size: 13px; margin-top: 25px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+        .footer .time { color: #718096; font-weight: 500; }
+        #debug {
+            background: #1a202c;
+            color: #68d391;
+            padding: 10px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            margin-top: 15px;
+            max-height: 100px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            display: none;
+        }
+        @media (max-width: 480px) {
+            .container { padding: 25px; }
+            .sensor-card .value { font-size: 22px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏥 Monitor Clínico</h1>
+            <div class="subtitle">Control de temperatura, humedad y presión</div>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-indicator">
+                <span class="status-dot online" id="statusDot"></span>
+                <span id="statusText">Conectando...</span>
+            </div>
+            <div style="font-size:13px; color:#718096;">🔄 Actualizando...</div>
+        </div>
+
+        <div class="alerta-box" id="alertaBox">
+            <div class="text" id="alertaText">¡Temperatura fuera de rango!</div>
+            <div id="alertaDetail">Por favor revisa el sistema</div>
+        </div>
+
+        <div class="sensor-grid">
+            <div class="sensor-card temperatura">
+                <span class="label"><span class="icon">🌡️</span> Temperatura</span>
+                <span class="value"><span id="tempValue">--</span><span class="unit">°C</span></span>
+            </div>
+            <div class="sensor-card humedad">
+                <span class="label"><span class="icon">💧</span> Humedad</span>
+                <span class="value"><span id="humValue">--</span><span class="unit">%</span></span>
+            </div>
+            <div class="sensor-card presion">
+                <span class="label"><span class="icon">📊</span> Presión</span>
+                <span class="value"><span id="presValue">--</span><span class="unit">hPa</span></span>
+            </div>
+        </div>
+
+        <div class="footer">
+            Última actualización: <span class="time" id="lastUpdate">--:--:--</span>
+            <br>
+            <span style="font-size:11px; color:#cbd5e0;">Datos desde Firebase</span>
+        </div>
+
+        <div id="debug"></div>
+    </div>
+
+    <script>
+        // ================================================
+        // CONFIGURACIÓN DE FIREBASE
+        // ================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyDycevZONP7sSgXobmKLvbvHBBPr-d1068",
+            authDomain: "sensor-8f335.firebaseapp.com",
+            databaseURL: "https://sensor-8f335-default-rtdb.firebaseio.com",
+            projectId: "sensor-8f335",
+            storageBucket: "sensor-8f335.firebasestorage.app",
+            messagingSenderId: "443625547629",
+            appId: "1:443625547629:web:c3186631838c331ee51c64"
+        };
+
+        const debug = document.getElementById('debug');
+        function log(msg) {
+            console.log(msg);
+            debug.style.display = 'block';
+            debug.textContent += msg + '\n';
+        }
+
+        log('🚀 Iniciando Firebase...');
+        log('📌 Configuración:');
+        log('   API Key: ' + firebaseConfig.apiKey.substring(0, 15) + '...');
+        log('   Database URL: ' + firebaseConfig.databaseURL);
+        log('   Project ID: ' + firebaseConfig.projectId);
+
+        try {
+            firebase.initializeApp(firebaseConfig);
+            log('✅ Firebase inicializado correctamente');
+        } catch (e) {
+            log('❌ Error al inicializar Firebase: ' + e.message);
+        }
+
+        const database = firebase.database();
+        log('✅ Database obtenida');
+
+        // ================================================
+        // ELEMENTOS HTML
+        // ================================================
+        const tempElement = document.getElementById('tempValue');
+        const humElement = document.getElementById('humValue');
+        const presElement = document.getElementById('presValue');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const lastUpdate = document.getElementById('lastUpdate');
+        const alertaBox = document.getElementById('alertaBox');
+        const alertaText = document.getElementById('alertaText');
+        const alertaDetail = document.getElementById('alertaDetail');
+
+        const TEMP_MIN = 20;
+        const TEMP_MAX = 28;
+
+        // ================================================
+        // ESCUCHAR CAMBIOS
+        // ================================================
+        const sensorRef = database.ref('/sensores/actual');
+        log('📡 Escuchando cambios en /sensores/actual');
+
+        sensorRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            log('📥 Datos recibidos: ' + JSON.stringify(data));
+
+            if (data) {
+                statusDot.className = 'status-dot online';
+                statusText.textContent = 'Conectado';
+                statusText.style.color = '#48bb78';
+
+                tempElement.textContent = data.temperatura ? data.temperatura.toFixed(1) : '--';
+                humElement.textContent = data.humedad ? data.humedad.toFixed(1) : '--';
+                presElement.textContent = data.presion ? data.presion.toFixed(1) : '--';
+
+                const now = new Date();
+                lastUpdate.textContent = now.toLocaleTimeString();
+
+                const temp = data.temperatura;
+                if (temp > TEMP_MAX) {
+                    alertaBox.className = 'alerta-box show';
+                    alertaText.textContent = `🔥 ¡Temperatura Alta! ${temp.toFixed(1)}°C`;
+                    alertaDetail.textContent = '⚠️ Revisa el sistema de climatización';
+                    statusDot.className = 'status-dot alerta';
+                    statusText.textContent = '⚠️ ALERTA';
+                    statusText.style.color = '#ed8936';
+                } else if (temp < TEMP_MIN) {
+                    alertaBox.className = 'alerta-box show';
+                    alertaText.textContent = `❄️ ¡Temperatura Baja! ${temp.toFixed(1)}°C`;
+                    alertaDetail.textContent = '⚠️ Revisa el sistema de calefacción';
+                    statusDot.className = 'status-dot alerta';
+                    statusText.textContent = '⚠️ ALERTA';
+                    statusText.style.color = '#ed8936';
+                } else {
+                    alertaBox.className = 'alerta-box';
+                    statusDot.className = 'status-dot online';
+                    statusText.textContent = '✅ Todo Normal';
+                    statusText.style.color = '#48bb78';
+                }
+
+                const tempCard = document.querySelector('.sensor-card.temperatura .value');
+                if (temp > TEMP_MAX) tempCard.style.color = '#e53e3e';
+                else if (temp < TEMP_MIN) tempCard.style.color = '#2b6cb0';
+                else tempCard.style.color = '#2d3748';
+
+                log('✅ Datos actualizados en la página');
+            } else {
+                log('⚠️ No hay datos en Firebase (snapshot vacío)');
+                statusDot.className = 'status-dot offline';
+                statusText.textContent = 'Sin datos...';
+                statusText.style.color = '#fc8181';
+                tempElement.textContent = '--';
+                humElement.textContent = '--';
+                presElement.textContent = '--';
+                alertaBox.className = 'alerta-box';
+            }
+        }, (error) => {
+            log('❌ Error al leer datos: ' + error.message);
+            statusDot.className = 'status-dot offline';
+            statusText.textContent = '❌ Error de conexión';
+            statusText.style.color = '#fc8181';
+        });
+
+        // ================================================
+        // DETECTAR OFFLINE
+        // ================================================
+        let timeoutId = setTimeout(() => {
+            if (tempElement.textContent === '--') {
+                log('⚠️ ESP32 offline detectado (timeout)');
+                statusDot.className = 'status-dot offline';
+                statusText.textContent = '🔴 ESP32 Offline';
+                statusText.style.color = '#fc8181';
+            }
+        }, 10000);
+
+        sensorRef.on('value', () => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => {
+                if (tempElement.textContent === '--') {
+                    log('⚠️ ESP32 offline detectado');
+                    statusDot.className = 'status-dot offline';
+                    statusText.textContent = '🔴 ESP32 Offline';
+                    statusText.style.color = '#fc8181';
+                }
+            }, 10000);
+        });
+
+        log('✅ Monitor Web Iniciado!');
+        log('📡 Conectado a: ' + firebaseConfig.projectId);
+        log('🔄 Esperando datos...');
+    </script>
+</body>
+</html>
